@@ -42,14 +42,24 @@ jobs:
 
       # ── 6. Lancer le test TX-91 ───────────────────────────────────────────
       - name: Run ParaBank Login Test TX-91
+        if: always()
         run: python run_tests.py
 
-      # ── 7. Afficher le XML avant envoi ────────────────────────────────────
-      - name: Show XML before sending
+      # ── 7. Vérifier que le XML existe ─────────────────────────────────────
+      - name: Check and show XML file
         if: always()
         run: |
-          echo "====== XML envoyé à Xray ======"
-          cat reports/results.xml
+          echo "Contenu du dossier reports :"
+          ls -la reports/
+          echo ""
+          if [ -f "reports/results.xml" ]; then
+            echo "✅ reports/results.xml existe"
+            echo "====== Contenu XML ======"
+            cat reports/results.xml
+          else
+            echo "❌ reports/results.xml N'EXISTE PAS"
+            exit 1
+          fi
 
       # ── 8. Authentification Xray Cloud ────────────────────────────────────
       - name: Authenticate to Xray Cloud
