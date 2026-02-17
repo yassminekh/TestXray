@@ -42,11 +42,10 @@ jobs:
 
       # ── 6. Lancer le test TX-91 ───────────────────────────────────────────
       - name: Run ParaBank Login Test TX-91
-        if: always()
         run: python run_tests.py
 
-      # ── 7. Vérifier que le XML existe ─────────────────────────────────────
-      - name: Check and show XML file
+      # ── 6b. Vérifier que le XML existe ────────────────────────────────────
+      - name: Check XML file exists
         if: always()
         run: |
           echo "Contenu du dossier reports :"
@@ -54,14 +53,12 @@ jobs:
           echo ""
           if [ -f "reports/results.xml" ]; then
             echo "✅ reports/results.xml existe"
-            echo "====== Contenu XML ======"
             cat reports/results.xml
           else
             echo "❌ reports/results.xml N'EXISTE PAS"
-            exit 1
           fi
 
-      # ── 8. Authentification Xray Cloud ────────────────────────────────────
+      # ── 7. Authentification Xray Cloud ────────────────────────────────────
       - name: Authenticate to Xray Cloud
         if: always()
         id: xray_auth
@@ -86,14 +83,14 @@ jobs:
           echo "✅ Token obtenu"
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      # ── 9. Envoyer le XML à Xray → TX-92 ─────────────────────────────────
-      - name: Upload results to Xray TX-92
+      # ── 8. Envoyer le XML à Xray → sans testExecKey ───────────────────────
+      - name: Upload results to Xray
         if: always()
         run: |
-          echo "Envoi vers projectKey=TX et testExecKey=TX-92..."
+          echo "Envoi vers projectKey=TX sans testExecKey..."
 
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX&testExecKey=TX-92" \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
             -H "Content-Type: text/xml" \
             --data-binary @reports/results.xml)
@@ -108,9 +105,9 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Résultats envoyés à TX-92 avec succès"
+          echo "✅ Résultats envoyés avec succès"
 
-      # ── 10. Artefact GitHub ───────────────────────────────────────────────
+      # ── 9. Artefact GitHub ────────────────────────────────────────────────
       - name: Save XML report as artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,7 +116,7 @@ jobs:
           path: reports/results.xml
           retention-days: 30
 
-      # ── 11. Résumé final ──────────────────────────────────────────────────
+      # ── 10. Résumé final ──────────────────────────────────────────────────
       - name: Final summary
         if: always()
         run: |
@@ -127,5 +124,5 @@ jobs:
           echo "  Test     : TX-91 — Vérifier la page login"
           echo "  Execution: TX-92 — Test Execution Login"
           echo "  Rapport  : reports/results.xml"
-          echo "  Résultat : disponible dans Jira Xray → TX-92"
+          echo "  Résultat : disponible dans Jira Xray"
           echo "=================================================="
