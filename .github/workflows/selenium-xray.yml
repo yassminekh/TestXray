@@ -1,0 +1,111 @@
+name: ParaBank Login Test → Xray
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  selenium-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ── 1. Checkout ───────────────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Python ─────────────────────────────────────────────────────────
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── 3. Dépendances ────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── 4. Google Chrome ──────────────────────────────────────────────────
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      # ── 5. Dossier reports ────────────────────────────────────────────────
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      # ── 6. Lancer le test TX-91 ───────────────────────────────────────────
+      - name: Run ParaBank Login Test TX-91
+        run: python run_tests.py
+
+      # ── 7. Afficher le XML (debug) ────────────────────────────────────────
+      - name: Show XML report
+        if: always()
+        run: cat reports/results.xml
+
+      # ── 8. Authentification Xray Cloud ────────────────────────────────────
+      - name: Authenticate to Xray Cloud
+        if: always()
+        id: xray_auth
+        run: |
+          TOKEN=$(curl -s -X POST \
+            "https://xray.cloud.getxray.app/api/v2/authenticate" \
+            -H "Content-Type: application/json" \
+            -d "{\"client_id\": \"${{ secrets.XRAY_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.XRAY_CLIENT_SECRET }}\"}" \
+            | tr -d '"')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "❌ Authentification Xray échouée"
+            exit 1
+          fi
+
+          echo "✅ Token Xray obtenu"
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      # ── 9. Envoyer le XML à Xray → TX-92 ─────────────────────────────────
+      - name: Upload results to Xray TX-92
+        if: always()
+        run: |
+          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=${{ secrets.JIRA_PROJECT_KEY }}&testExecKey=TX-92" \
+            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
+            -H "Content-Type: text/xml" \
+            --data-binary @reports/results.xml)
+
+          echo "====== Réponse Xray ======"
+          cat response_xray.json
+          echo ""
+          echo "HTTP Status : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Envoi à Xray échoué (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+          echo "✅ Résultats envoyés à TX-92 avec succès"
+
+      # ── 10. Artefact GitHub ───────────────────────────────────────────────
+      - name: Save XML report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parabank-login-report
+          path: reports/results.xml
+          retention-days: 30
+
+      # ── 11. Résumé final ──────────────────────────────────────────────────
+      - name: Final summary
+        if: always()
+        run: |
+          echo "=================================================="
+          echo "  Test     : TX-91 — Vérifier la page login"
+          echo "  Execution: TX-92 — Test Execution Login"
+          echo "  Rapport  : reports/results.xml"
+          echo "  Résultat : disponible dans Jira Xray → TX-92"
+          echo "=================================================="
