@@ -110,26 +110,53 @@ jobs:
             }
           }' > /tmp/info.json
 
-          echo "====== info.json ======"
-          cat /tmp/info.json
-
+          echo "====== Tentative 1 : champ results ======"
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
             "https://xray.cloud.getxray.app/api/v2/import/execution/junit/multipart" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
-            -F "file=@reports/results.xml;type=text/xml" \
+            -F "results=@reports/results.xml;type=text/xml" \
             -F "info=@/tmp/info.json;type=application/json")
 
-          echo "====== Réponse Xray ======"
-          cat response_xray.json
-          echo ""
+          echo "Réponse : $(cat response_xray.json)"
           echo "HTTP Status : $HTTP_STATUS"
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ Envoi à Xray échoué (HTTP $HTTP_STATUS)"
-            exit 1
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés avec succès"
+            exit 0
           fi
 
-          echo "✅ Résultats envoyés avec succès"
+          echo "====== Tentative 2 : champ result ======"
+          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit/multipart" \
+            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
+            -F "result=@reports/results.xml;type=text/xml" \
+            -F "info=@/tmp/info.json;type=application/json")
+
+          echo "Réponse : $(cat response_xray.json)"
+          echo "HTTP Status : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés avec succès"
+            exit 0
+          fi
+
+          echo "====== Tentative 3 : API v1 ======"
+          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
+            "https://xray.cloud.getxray.app/api/v1/import/execution/junit/multipart" \
+            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
+            -F "results=@reports/results.xml;type=text/xml" \
+            -F "info=@/tmp/info.json;type=application/json")
+
+          echo "Réponse : $(cat response_xray.json)"
+          echo "HTTP Status : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés avec succès"
+            exit 0
+          fi
+
+          echo "❌ Toutes les tentatives ont échoué"
+          exit 1
 
       # ── 10. Artefact GitHub ───────────────────────────────────────────────
       - name: Save XML report as artifact
