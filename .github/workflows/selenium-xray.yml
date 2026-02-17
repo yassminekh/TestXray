@@ -83,34 +83,61 @@ jobs:
           echo "✅ Token obtenu"
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      # ── 9. TEST XRAY : envoyer un XML de succès minimal ───────────────────
+      # ── 9. Envoyer XML à Xray avec TX-92 ──────────────────────────────────
       - name: Upload minimal success XML to Xray
         if: always()
         run: |
-          echo "Envoi XML minimal de test..."
+          echo "Envoi XML vers TX-92..."
 
           echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testsuite name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testcase name="test_TX_91_login_valide" classname="TestParaBankLogin" time="1"/></testsuite></testsuites>' > /tmp/test_xray.xml
 
-          echo "====== XML envoyé ======"
-          cat /tmp/test_xray.xml
-
+          echo "====== Tentative 1 : testExecKey seulement ======"
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX" \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?testExecKey=TX-92" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
             -H "Content-Type: text/xml" \
             --data-binary @/tmp/test_xray.xml)
 
-          echo "====== Réponse Xray ======"
-          cat response_xray.json
-          echo ""
+          echo "Réponse : $(cat response_xray.json)"
           echo "HTTP Status : $HTTP_STATUS"
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ Envoi à Xray échoué (HTTP $HTTP_STATUS)"
-            exit 1
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés à TX-92 avec succès"
+            exit 0
           fi
 
-          echo "✅ Résultats envoyés avec succès"
+          echo "====== Tentative 2 : projectKey + testExecKey ======"
+          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX&testExecKey=TX-92" \
+            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
+            -H "Content-Type: text/xml" \
+            --data-binary @/tmp/test_xray.xml)
+
+          echo "Réponse : $(cat response_xray.json)"
+          echo "HTTP Status : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés à TX-92 avec succès"
+            exit 0
+          fi
+
+          echo "====== Tentative 3 : multipart ======"
+          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit/multipart" \
+            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
+            -F "file=@/tmp/test_xray.xml;type=text/xml" \
+            -F 'info={"fields":{"project":{"key":"TX"},"summary":"Test Execution Login","issuetype":{"id":"TX-92"}}};type=application/json')
+
+          echo "Réponse : $(cat response_xray.json)"
+          echo "HTTP Status : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Résultats envoyés avec succès"
+            exit 0
+          fi
+
+          echo "❌ Toutes les tentatives ont échoué"
+          exit 1
 
       # ── 10. Artefact GitHub ───────────────────────────────────────────────
       - name: Save XML report as artifact
