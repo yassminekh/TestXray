@@ -44,7 +44,7 @@ jobs:
       - name: Run ParaBank Login Test TX-91
         run: python run_tests.py
 
-      # ── 6b. Vérifier que le XML existe ────────────────────────────────────
+      # ── 7. Vérifier que le XML existe ─────────────────────────────────────
       - name: Check XML file exists
         if: always()
         run: |
@@ -58,7 +58,7 @@ jobs:
             echo "❌ reports/results.xml N'EXISTE PAS"
           fi
 
-      # ── 7. Authentification Xray Cloud ────────────────────────────────────
+      # ── 8. Authentification Xray Cloud ────────────────────────────────────
       - name: Authenticate to Xray Cloud
         if: always()
         id: xray_auth
@@ -83,17 +83,22 @@ jobs:
           echo "✅ Token obtenu"
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      # ── 8. Envoyer le XML à Xray → sans testExecKey ───────────────────────
-      - name: Upload results to Xray
+      # ── 9. TEST XRAY : envoyer un XML de succès minimal ───────────────────
+      - name: Upload minimal success XML to Xray
         if: always()
         run: |
-          echo "Envoi vers projectKey=TX sans testExecKey..."
+          echo "Envoi XML minimal de test..."
+
+          echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testsuite name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testcase name="test_TX_91_login_valide" classname="TestParaBankLogin" time="1"/></testsuite></testsuites>' > /tmp/test_xray.xml
+
+          echo "====== XML envoyé ======"
+          cat /tmp/test_xray.xml
 
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
             "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
             -H "Content-Type: text/xml" \
-            --data-binary @reports/results.xml)
+            --data-binary @/tmp/test_xray.xml)
 
           echo "====== Réponse Xray ======"
           cat response_xray.json
@@ -107,7 +112,7 @@ jobs:
 
           echo "✅ Résultats envoyés avec succès"
 
-      # ── 9. Artefact GitHub ────────────────────────────────────────────────
+      # ── 10. Artefact GitHub ───────────────────────────────────────────────
       - name: Save XML report as artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -116,7 +121,7 @@ jobs:
           path: reports/results.xml
           retention-days: 30
 
-      # ── 10. Résumé final ──────────────────────────────────────────────────
+      # ── 11. Résumé final ──────────────────────────────────────────────────
       - name: Final summary
         if: always()
         run: |

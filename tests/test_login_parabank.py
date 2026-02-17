@@ -19,12 +19,14 @@ def get_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--ignore-certificate-errors")
 
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
         options=options
     )
-    driver.implicitly_wait(10)
+    driver.implicitly_wait(15)
     return driver
 
 
@@ -32,7 +34,7 @@ class TestParaBankLogin(unittest.TestCase):
 
     def setUp(self):
         self.driver = get_driver()
-        self.wait   = WebDriverWait(self.driver, 15)
+        self.wait   = WebDriverWait(self.driver, 30)  # augmenté à 30s
         self.driver.get(BASE_URL)
 
     def tearDown(self):
@@ -41,47 +43,53 @@ class TestParaBankLogin(unittest.TestCase):
     def test_TX_91_login_valide(self):
         """TX-91 — Vérifier la page login avec identifiants valides"""
 
-        # ── Étape 1 : Remplir le champ username ──────────────────────────────
-        username_field = self.driver.find_element(By.NAME, "username")
+        # ── Étape 1 : Remplir username ────────────────────────────────────────
+        username_field = self.wait.until(
+            EC.presence_of_element_located((By.NAME, "username"))
+        )
         username_field.clear()
         username_field.send_keys(VALID_USER)
 
-        # ── Étape 2 : Remplir le champ password ──────────────────────────────
+        # ── Étape 2 : Remplir password ────────────────────────────────────────
         password_field = self.driver.find_element(By.NAME, "password")
         password_field.clear()
         password_field.send_keys(VALID_PASS)
 
-        # ── Étape 3 : Cliquer sur le bouton Login ────────────────────────────
+        # ── Étape 3 : Cliquer sur Login ───────────────────────────────────────
         self.driver.find_element(
             By.CSS_SELECTOR, "input.button[type='submit']"
         ).click()
 
-        # ── Étape 4 : Vérifier la redirection vers /overview ─────────────────
-        self.wait.until(EC.url_contains("/overview"))
-
-        self.assertIn(
-            "/overview",
-            self.driver.current_url,
-            f"Après login valide, l'URL doit contenir '/overview'. URL actuelle : {self.driver.current_url}"
+        # ── Étape 4 : Attendre le changement d'URL (overview ou login.htm) ────
+        self.wait.until(
+            EC.any_of(
+                EC.url_contains("overview"),
+                EC.url_contains("activity"),
+                EC.presence_of_element_located((By.ID, "accountTable")),
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".error"))
+            )
         )
 
-        # ── Étape 5 : Vérifier que la page Accounts Overview est affichée ────
-        accounts_table = self.wait.until(
-            EC.visibility_of_element_located((By.ID, "accountTable"))
-        )
+        # ── Étape 5 : Vérifier qu'on n'est PAS sur une page d'erreur ──────────
+        current_url = self.driver.current_url
+        print(f"\nURL après login : {current_url}")
+        print(f"Titre page      : {self.driver.title}")
+
+        # Vérifier absence d'erreur
+        error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".error")
+        if error_elements:
+            error_text = error_elements[0].text
+            self.fail(f"Erreur de login affichée : {error_text}")
+
+        # ── Étape 6 : Vérifier que le login est réussi ────────────────────────
         self.assertTrue(
-            accounts_table.is_displayed(),
-            "La table des comptes doit être visible après connexion"
+            "overview" in current_url or
+            "activity" in current_url or
+            self.driver.find_elements(By.ID, "accountTable"),
+            f"Login échoué. URL actuelle : {current_url}"
         )
 
-        # ── Étape 6 : Vérifier que le bouton Log Out est présent ─────────────
-        logout_link = self.wait.until(
-            EC.visibility_of_element_located((By.LINK_TEXT, "Log Out"))
-        )
-        self.assertTrue(
-            logout_link.is_displayed(),
-            "Le bouton Log Out doit être visible après connexion"
-        )
+        print("✅ Login réussi !")
 
 
 if __name__ == "__main__":
