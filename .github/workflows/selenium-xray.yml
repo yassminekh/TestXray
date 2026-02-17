@@ -92,17 +92,32 @@ jobs:
           echo "✅ Token obtenu"
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      # ── 9. Envoyer le XML à Xray → création automatique ──────────────────
+      # ── 9. Envoyer le XML à Xray via multipart ────────────────────────────
       - name: Upload results to Xray
         if: always()
         run: |
-          echo "Envoi vers projectKey=TX..."
+          echo "Envoi via multipart vers TX..."
+
+          echo '{
+            "fields": {
+              "project": {
+                "key": "TX"
+              },
+              "summary": "Test Execution Login - ParaBank",
+              "issuetype": {
+                "name": "Test Execution"
+              }
+            }
+          }' > /tmp/info.json
+
+          echo "====== info.json ======"
+          cat /tmp/info.json
 
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX" \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit/multipart" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
-            -H "Content-Type: text/xml" \
-            --data-binary @reports/results.xml)
+            -F "file=@reports/results.xml;type=text/xml" \
+            -F "info=@/tmp/info.json;type=application/json")
 
           echo "====== Réponse Xray ======"
           cat response_xray.json
@@ -115,7 +130,6 @@ jobs:
           fi
 
           echo "✅ Résultats envoyés avec succès"
-          echo "📊 Une nouvelle Test Execution a été créée dans Jira TX"
 
       # ── 10. Artefact GitHub ───────────────────────────────────────────────
       - name: Save XML report as artifact
