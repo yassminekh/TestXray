@@ -72,8 +72,10 @@ jobs:
       - name: Upload results to Xray TX-92
         if: always()
         run: |
+          echo "Envoi vers projectKey=TX et testExecKey=TX-92..."
+
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=${{ secrets.JIRA_PROJECT_KEY }}&testExecKey=TX-92" \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX&testExecKey=TX-92" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
             -H "Content-Type: text/xml" \
             --data-binary @reports/results.xml)
