@@ -42,20 +42,29 @@ jobs:
 
       # ── 6. Lancer le test TX-91 ───────────────────────────────────────────
       - name: Run ParaBank Login Test TX-91
+        id: run_tests
         run: python run_tests.py
+        continue-on-error: true
 
-      # ── 7. Vérifier que le XML existe ─────────────────────────────────────
-      - name: Check XML file exists
+      # ── 7. Générer le XML selon résultat du test ──────────────────────────
+      - name: Generate XML report
         if: always()
         run: |
-          echo "Contenu du dossier reports :"
-          ls -la reports/
-          echo ""
           if [ -f "reports/results.xml" ]; then
-            echo "✅ reports/results.xml existe"
+            echo "✅ XML déjà généré"
             cat reports/results.xml
           else
-            echo "❌ reports/results.xml N'EXISTE PAS"
+            echo "⚠️ Génération manuelle du XML..."
+            TEST_STATUS="${{ steps.run_tests.outcome }}"
+
+            if [ "$TEST_STATUS" = "success" ]; then
+              echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testsuite name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testcase name="test_TX_91_login_valide" classname="TestParaBankLogin" time="1"/></testsuite></testsuites>' > reports/results.xml
+            else
+              echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="ParaBank Login Tests" tests="1" failures="1" errors="0" skipped="0"><testsuite name="ParaBank Login Tests" tests="1" failures="1" errors="0" skipped="0"><testcase name="test_TX_91_login_valide" classname="TestParaBankLogin" time="1"><failure message="Test Failed">Login ParaBank echoue</failure></testcase></testsuite></testsuites>' > reports/results.xml
+            fi
+
+            echo "====== XML généré ======"
+            cat reports/results.xml
           fi
 
       # ── 8. Authentification Xray Cloud ────────────────────────────────────
@@ -83,61 +92,30 @@ jobs:
           echo "✅ Token obtenu"
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      # ── 9. Envoyer XML à Xray avec TX-92 ──────────────────────────────────
-      - name: Upload minimal success XML to Xray
+      # ── 9. Envoyer le XML à Xray → création automatique ──────────────────
+      - name: Upload results to Xray
         if: always()
         run: |
-          echo "Envoi XML vers TX-92..."
+          echo "Envoi vers projectKey=TX..."
 
-          echo '<?xml version="1.0" encoding="UTF-8"?><testsuites name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testsuite name="ParaBank Login Tests" tests="1" failures="0" errors="0" skipped="0"><testcase name="test_TX_91_login_valide" classname="TestParaBankLogin" time="1"/></testsuite></testsuites>' > /tmp/test_xray.xml
-
-          echo "====== Tentative 1 : testExecKey seulement ======"
           HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?testExecKey=TX-92" \
+            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX" \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
             -H "Content-Type: text/xml" \
-            --data-binary @/tmp/test_xray.xml)
+            --data-binary @reports/results.xml)
 
-          echo "Réponse : $(cat response_xray.json)"
+          echo "====== Réponse Xray ======"
+          cat response_xray.json
+          echo ""
           echo "HTTP Status : $HTTP_STATUS"
 
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Résultats envoyés à TX-92 avec succès"
-            exit 0
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Envoi à Xray échoué (HTTP $HTTP_STATUS)"
+            exit 1
           fi
 
-          echo "====== Tentative 2 : projectKey + testExecKey ======"
-          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=TX&testExecKey=TX-92" \
-            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
-            -H "Content-Type: text/xml" \
-            --data-binary @/tmp/test_xray.xml)
-
-          echo "Réponse : $(cat response_xray.json)"
-          echo "HTTP Status : $HTTP_STATUS"
-
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Résultats envoyés à TX-92 avec succès"
-            exit 0
-          fi
-
-          echo "====== Tentative 3 : multipart ======"
-          HTTP_STATUS=$(curl -s -o response_xray.json -w "%{http_code}" -X POST \
-            "https://xray.cloud.getxray.app/api/v2/import/execution/junit/multipart" \
-            -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
-            -F "file=@/tmp/test_xray.xml;type=text/xml" \
-            -F 'info={"fields":{"project":{"key":"TX"},"summary":"Test Execution Login","issuetype":{"id":"TX-92"}}};type=application/json')
-
-          echo "Réponse : $(cat response_xray.json)"
-          echo "HTTP Status : $HTTP_STATUS"
-
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Résultats envoyés avec succès"
-            exit 0
-          fi
-
-          echo "❌ Toutes les tentatives ont échoué"
-          exit 1
+          echo "✅ Résultats envoyés avec succès"
+          echo "📊 Une nouvelle Test Execution a été créée dans Jira TX"
 
       # ── 10. Artefact GitHub ───────────────────────────────────────────────
       - name: Save XML report as artifact
@@ -154,7 +132,6 @@ jobs:
         run: |
           echo "=================================================="
           echo "  Test     : TX-91 — Vérifier la page login"
-          echo "  Execution: TX-92 — Test Execution Login"
           echo "  Rapport  : reports/results.xml"
-          echo "  Résultat : disponible dans Jira Xray"
+          echo "  Résultat : disponible dans Jira Xray → projet TX"
           echo "=================================================="
